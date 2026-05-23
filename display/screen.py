@@ -1,9 +1,17 @@
 from PIL import Image, ImageDraw, ImageFont
+from pathlib import Path
 import os
 from icons import get_icon
 
 
 def _load_font(size):
+    font_dir = Path(__file__).resolve().parents[0] / "fonts"
+    bundled = font_dir / "DejaVuSans.ttf"
+    if bundled.exists():
+        try:
+            return ImageFont.truetype(str(bundled), size)
+        except OSError:
+            pass
     candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
@@ -32,11 +40,11 @@ def create_weather_screen(data, width, height):
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    font_title = _load_font(min(40, max(28, width // 18)))
-    font_header = _load_font(min(32, max(24, width // 26)))
-    font_large = _load_font(min(260, max(200, width * 2 // 5)))
-    font_medium = _load_font(min(36, max(28, width // 22)))
-    font_small = _load_font(min(24, max(18, width // 28)))
+    font_title = _load_font(40)
+    font_header = _load_font(30)
+    font_large = _load_font(220)
+    font_medium = _load_font(28)
+    font_small = _load_font(20)
 
     city = data.get("city", "Unknown City")
     timestamp = data.get("time", "--:--")
