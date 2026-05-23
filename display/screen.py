@@ -25,11 +25,11 @@ def create_weather_screen(data, width, height):
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    font_title = _load_font(26)
-    font_header = _load_font(20)
-    font_large = _load_font(90)
-    font_medium = _load_font(22)
-    font_small = _load_font(18)
+    font_title = _load_font(min(36, max(26, width // 18)))
+    font_header = _load_font(min(28, max(22, width // 28)))
+    font_large = _load_font(min(150, max(120, width // 5)))
+    font_medium = _load_font(min(30, max(24, width // 24)))
+    font_small = _load_font(min(22, max(18, width // 30)))
 
     city = data.get("city", "Unknown City")
     timestamp = data.get("time", "--:--")
@@ -40,7 +40,7 @@ def create_weather_screen(data, width, height):
     recommendation = data.get("recommendation", "Check the weather and dress for it.")
     extra = data.get("extra", None)
 
-    margin = 18
+    margin = 20
 
     # Header
     draw.text((margin, margin), city.upper(), font=font_title, fill=0)
@@ -51,19 +51,27 @@ def create_weather_screen(data, width, height):
 
     # Main temperature
     temp_text = f"{temp}°C"
-    draw.text((margin, margin + 54), temp_text, font=font_large, fill=0)
-    draw.text((margin, margin + 170), condition.title(), font=font_medium, fill=0)
+    temp_box = draw.textbbox((0, 0), temp_text, font=font_large)
+    temp_height = temp_box[3] - temp_box[1]
+    temp_y = margin + 60
+    draw.text((margin, temp_y), temp_text, font=font_large, fill=0)
+    condition_y = temp_y + temp_height + 8
+    draw.text((margin, condition_y), condition.title(), font=font_medium, fill=0)
+    condition_box = draw.textbbox((0, 0), condition.title(), font=font_medium)
+    condition_height = condition_box[3] - condition_box[1]
 
     # Icon (paste from icons module)
-    icon_box = (width - margin - 140, margin + 48, width - margin, margin + 140)
+    icon_size = min(180, width // 3)
+    icon_top = margin + 54
+    icon_box = (width - margin - icon_size, icon_top, width - margin, icon_top + icon_size)
     x0, y0, x1, y1 = icon_box
     iw = max(1, x1 - x0)
     ih = max(1, y1 - y0)
     icon_img = get_icon(condition, (iw, ih))
     image.paste(icon_img, (x0, y0))
 
-    # Stats card
-    stats_top = margin + 220
+    body_bottom = max(condition_y + condition_height + 12, y1)
+    stats_top = body_bottom + 24
     stats_height = 110
     draw.rectangle((margin, stats_top, width - margin, stats_top + stats_height), outline=0)
 

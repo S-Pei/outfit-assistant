@@ -2,5 +2,3 @@ requests
 python-dotenv
 pillow
 numpy
-spidev
-RPi.GPIO
