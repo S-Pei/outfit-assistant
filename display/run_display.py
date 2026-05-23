@@ -54,6 +54,20 @@ def save_preview(image, filename="weather_screen_preview.png", scale=1, as_epape
         print(f"Saved scaled debug preview image: {scaled_name}")
 
 
+def get_epaper_dimensions():
+    try:
+        from waveshare_epd import epd5in83_V2
+    except ImportError:
+        return None
+
+    epd = epd5in83_V2.EPD()
+    try:
+        epd.init()
+    except Exception:
+        pass
+    return getattr(epd, "width", None), getattr(epd, "height", None)
+
+
 def display_on_epaper(image):
     try:
         from waveshare_epd import epd5in83_V2
@@ -100,10 +114,11 @@ def get_epaper_preview(image):
 
 
 def main():
-    width = 648
-    height = 480
     data = get_sample_weather_data()
     preview_scale = parse_preview_scale(sys.argv)
+    device_preview = "--preview-device" in sys.argv or "--preview-epaper" in sys.argv or "--debug" in sys.argv
+    epaper_dims = get_epaper_dimensions() if device_preview or "--display" in sys.argv or "--all" in sys.argv else None
+    width, height = epaper_dims if epaper_dims and all(epaper_dims) else (648, 480)
 
     image = create_weather_screen(data, width, height)
     # support live weather fetch

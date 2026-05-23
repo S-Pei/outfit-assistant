@@ -7,6 +7,7 @@ def _load_font(size):
     candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/Library/Fonts/Arial.ttf",
         "/System/Library/Fonts/SFNS.ttf",
     ]
@@ -18,6 +19,12 @@ def _load_font(size):
             except OSError:
                 continue
 
+    for name in ["DejaVuSans.ttf", "LiberationSans-Regular.ttf", "Arial.ttf"]:
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+
     return ImageFont.load_default()
 
 
@@ -25,11 +32,11 @@ def create_weather_screen(data, width, height):
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    font_title = _load_font(min(36, max(26, width // 18)))
-    font_header = _load_font(min(28, max(22, width // 28)))
-    font_large = _load_font(min(150, max(120, width // 5)))
-    font_medium = _load_font(min(30, max(24, width // 24)))
-    font_small = _load_font(min(22, max(18, width // 30)))
+    font_title = _load_font(min(40, max(28, width // 18)))
+    font_header = _load_font(min(32, max(24, width // 26)))
+    font_large = _load_font(min(260, max(200, width * 2 // 5)))
+    font_medium = _load_font(min(36, max(28, width // 22)))
+    font_small = _load_font(min(24, max(18, width // 28)))
 
     city = data.get("city", "Unknown City")
     timestamp = data.get("time", "--:--")
@@ -72,8 +79,9 @@ def create_weather_screen(data, width, height):
 
     body_bottom = max(condition_y + condition_height + 12, y1)
     stats_top = body_bottom + 24
-    stats_height = 110
-    draw.rectangle((margin, stats_top, width - margin, stats_top + stats_height), outline=0)
+    stats_height = min(110, max(80, height - margin - stats_top - 90))
+    stats_bottom = stats_top + stats_height
+    draw.rectangle((margin, stats_top, width - margin, stats_bottom), outline=0)
 
     label_x = margin + 14
     value_x = width // 2 + 10
@@ -82,11 +90,13 @@ def create_weather_screen(data, width, height):
     draw.text((value_x, stats_top + 14), "Wind", font=font_small, fill=0)
     draw.text((value_x, stats_top + 40), f"{wind} km/h", font=font_header, fill=0)
 
-    if extra:
+    if extra and stats_height >= 100:
         draw.text((label_x, stats_top + 80), extra, font=font_small, fill=0)
 
     # Recommendation footer
-    rec_top = stats_top + stats_height + 18
+    rec_top = stats_bottom + 18
+    if rec_top >= height - margin - 40:
+        rec_top = max(stats_bottom + 18, height - margin - 80)
     draw.rectangle((margin, rec_top, width - margin, height - margin), outline=0)
     draw.text((margin + 12, rec_top + 12), "Recommendation", font=font_small, fill=0)
     draw.multiline_text((margin + 12, rec_top + 40), recommendation, font=font_small, fill=0, spacing=4)
