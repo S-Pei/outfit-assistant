@@ -2,6 +2,7 @@ from PIL import Image
 import os
 import sys
 from pathlib import Path
+from datetime import date
 
 # Ensure repo root is on sys.path so sibling packages like `weather` can be imported
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,8 +14,8 @@ EPD_LIB_PATH = Path('/home/cutiepi/e-Paper/RaspberryPi_JetsonNano/python/lib')
 if EPD_LIB_PATH.is_dir():
     sys.path.append(str(EPD_LIB_PATH))
 
-from screen import create_weather_screen
-from weather.open_weather import fetch_weather
+from screen import create_daily_forecast_screen, create_weather_screen
+from weather.open_weather import fetch_daily_forecast, fetch_weather
 
 
 def parse_preview_scale(argv):
@@ -36,6 +37,28 @@ def get_sample_weather_data():
         "feels": 12,
         "wind": 9,
         "recommendation": "Wear a hoodie today.",
+    }
+
+
+def get_sample_daily_forecast_data():
+    return {
+        "city": "London",
+        "date_label": "Today",
+        "condition": "Light Rain",
+        "summary": "Umbrella | removable layer | wind picks up late",
+        "min_temp": 11,
+        "max_temp": 19,
+        "max_pop": 80,
+        "max_wind": 8,
+        "rain_window": "13:00 - 19:00",
+        "forecast": [
+            {"time": "07:00", "temp": 11, "condition": "Clouds", "pop": 10, "wind": 3},
+            {"time": "10:00", "temp": 15, "condition": "Clouds", "pop": 25, "wind": 4},
+            {"time": "13:00", "temp": 18, "condition": "Light Rain", "pop": 65, "wind": 6},
+            {"time": "16:00", "temp": 19, "condition": "Rain", "pop": 80, "wind": 8},
+            {"time": "19:00", "temp": 16, "condition": "Drizzle", "pop": 55, "wind": 7},
+            {"time": "22:00", "temp": 13, "condition": "Clouds", "pop": 20, "wind": 5},
+        ],
     }
 
 
@@ -114,13 +137,14 @@ def get_epaper_preview(image):
 
 
 def main():
-    data = get_sample_weather_data()
+    daily_mode = "--daily" in sys.argv or "--forecast" in sys.argv
+    data = get_sample_daily_forecast_data() if daily_mode else get_sample_weather_data()
     preview_scale = parse_preview_scale(sys.argv)
     device_preview = "--preview-device" in sys.argv or "--preview-epaper" in sys.argv or "--debug" in sys.argv
     epaper_dims = get_epaper_dimensions() if device_preview or "--display" in sys.argv or "--all" in sys.argv else None
     width, height = epaper_dims if epaper_dims and all(epaper_dims) else (648, 480)
 
-    image = create_weather_screen(data, width, height)
+    image = create_daily_forecast_screen(data, width, height) if daily_mode else create_weather_screen(data, width, height)
     # support live weather fetch
     live_mode = "--live" in sys.argv or "--weather" in sys.argv
     device_preview = "--preview-device" in sys.argv or "--preview-epaper" in sys.argv or "--debug" in sys.argv
@@ -133,15 +157,21 @@ def main():
     if live_mode:
         try:
             live_city = os.getenv("CITY", data.get("city", "London"))
-            data_live = fetch_weather(live_city)
+            if daily_mode:
+                data_live = fetch_daily_forecast(live_city, target_date=date.today().isoformat())
+                data_live["date_label"] = "Today"
+                image = create_daily_forecast_screen(data_live, width, height)
+            else:
+                data_live = fetch_weather(live_city)
+                image = create_weather_screen(data_live, width, height)
             data = data_live
-            image = create_weather_screen(data, width, height)
             print("Fetched live weather for", live_city)
         except Exception as e:
             print("Live weather fetch failed, using sample data:", e)
 
     if preview_mode:
-        save_preview(image, scale=preview_scale, as_epaper=device_preview)
+        preview_filename = "daily_forecast_preview.png" if daily_mode else "weather_screen_preview.png"
+        save_preview(image, filename=preview_filename, scale=preview_scale, as_epaper=device_preview)
 
     if display_mode:
         display_on_epaper(image)
