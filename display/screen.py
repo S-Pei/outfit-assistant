@@ -5,35 +5,9 @@ from icons import get_icon
 
 
 def _load_font(size):
-    font_dir = Path(__file__).resolve().parents[0] / "fonts"
-    bundled = font_dir / "DejaVuSans.ttf"
-    if bundled.exists():
-        try:
-            return ImageFont.truetype(str(bundled), size)
-        except OSError:
-            pass
-    candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/Library/Fonts/Arial.ttf",
-        "/System/Library/Fonts/SFNS.ttf",
-    ]
-
-    for path in candidates:
-        if os.path.exists(path):
-            try:
-                return ImageFont.truetype(path, size)
-            except OSError:
-                continue
-
-    for name in ["DejaVuSans.ttf", "LiberationSans-Regular.ttf", "Arial.ttf"]:
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-
-    return ImageFont.load_default()
+    # Hard-coded to a Debian/Ubuntu / Raspberry Pi typical TTF path.
+    # Intentionally do not fall back; let it raise if the font is missing.
+    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
 
 
 def create_weather_screen(data, width, height):
