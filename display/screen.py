@@ -83,12 +83,48 @@ def _as_number(value):
         return None
 
 
+def _forecast_hour(entry):
+    time_text = str(entry.get("time", ""))
+    try:
+        return int(time_text.split(":", 1)[0])
+    except (TypeError, ValueError):
+        return None
+
+
+def _filter_forecast_window(entries, start_hour=7, end_hour=23):
+    filtered = []
+    for entry in entries:
+        hour = _forecast_hour(entry)
+        if hour is None:
+            continue
+        if start_hour <= hour <= end_hour:
+            filtered.append(entry)
+    return filtered or entries
+
+
 def _forecast_number(entries, key, reducer):
     values = [_as_number(entry.get(key)) for entry in entries]
     values = [value for value in values if value is not None]
     if not values:
         return "--"
     return int(round(reducer(values)))
+
+
+def _forecast_time_for(entries, key, reducer):
+    best_entry = None
+    best_value = None
+
+    for entry in entries:
+        value = _as_number(entry.get(key))
+        if value is None:
+            continue
+        if best_value is None or reducer([best_value, value]) == value:
+            best_entry = entry
+            best_value = value
+
+    if not best_entry:
+        return "--:--"
+    return best_entry.get("time", "--:--")
 
 
 def _wind_label(speed):
@@ -121,11 +157,11 @@ def _wind_impact(speed):
     return "Avoid fragile umbrella"
 
 
-def _rain_window(entries, threshold=35):
+def _rain_timing(entries, max_pop, threshold=35):
     rainy = [entry for entry in entries if _as_number(entry.get("pop")) is not None and _as_number(entry.get("pop")) >= threshold]
     if not rainy:
-        return "No major rain window"
-    return f"{rainy[0].get('time', '--:--')} - {rainy[-1].get('time', '--:--')}"
+        return False, "Unlikely", f"Peak {_format_value(max_pop, '%')}"
+    return True, rainy[0].get("time", "--:--"), f"Stops {rainy[-1].get('time', '--:--')}"
 
 
 def _daily_recommendation(max_pop, max_wind, low_temp, high_temp):
@@ -165,15 +201,17 @@ def create_daily_forecast_screen(data, width, height):
     margin = 18
     city = data.get("city", "Unknown City")
     day_label = data.get("date_label") or data.get("date") or "Today"
-    entries = data.get("forecast", [])
+    entries = _filter_forecast_window(data.get("forecast", []))
 
-    low_temp = data.get("min_temp")
+    low_temp = _forecast_number(entries, "temp", min)
     if low_temp in (None, "--"):
-        low_temp = _forecast_number(entries, "temp", min)
+        low_temp = data.get("min_temp")
+    low_time = data.get("min_temp_time") or _forecast_time_for(entries, "temp", min)
 
-    high_temp = data.get("max_temp")
+    high_temp = _forecast_number(entries, "temp", max)
     if high_temp in (None, "--"):
-        high_temp = _forecast_number(entries, "temp", max)
+        high_temp = data.get("max_temp")
+    high_time = data.get("max_temp_time") or _forecast_time_for(entries, "temp", max)
 
     max_pop = data.get("max_pop")
     if max_pop in (None, "--"):
@@ -183,7 +221,7 @@ def create_daily_forecast_screen(data, width, height):
     if max_wind in (None, "--"):
         max_wind = _forecast_number(entries, "wind", max)
 
-    rain_window = data.get("rain_window") or _rain_window(entries)
+    has_rain, rain_start, rain_stop = _rain_timing(entries, max_pop)
     summary = data.get("summary") or _daily_recommendation(max_pop, max_wind, low_temp, high_temp)
 
     # Header
@@ -214,9 +252,9 @@ def create_daily_forecast_screen(data, width, height):
     card_w = (width - margin * 2 - gap * 3) // 4
     card_h = 92
     cards = [
-        ("Rain", _format_value(max_pop, "%"), rain_window, "rain"),
-        ("High", _format_value(high_temp, "°C"), "Warmest point", "clear"),
-        ("Low", _format_value(low_temp, "°C"), "Coolest point", "snow"),
+        ("Rain starts" if has_rain else "Rain", rain_start, rain_stop, "rain"),
+        ("High", _format_value(high_temp, "°C"), f"At {high_time}", "clear"),
+        ("Low", _format_value(low_temp, "°C"), f"At {low_time}", "snow"),
         ("Wind", _wind_label(max_wind), _wind_impact(max_wind), "wind"),
     ]
 
@@ -225,7 +263,7 @@ def create_daily_forecast_screen(data, width, height):
         x1 = x0 + card_w
         y0 = card_top
         y1 = y0 + card_h
-        is_rain = label == "Rain" and _as_number(max_pop) is not None and max_pop >= 35
+        is_rain = icon_condition == "rain" and _as_number(max_pop) is not None and max_pop >= 35
         if is_rain:
             draw.rectangle((x0, y0, x1, y1), outline=0, fill=0)
             fill = 255
@@ -242,7 +280,7 @@ def create_daily_forecast_screen(data, width, height):
 
     # Hourly forecast strip
     strip_top = card_top + card_h + 18
-    draw.text((margin, strip_top), "Hourly forecast", font=font_header, fill=0)
+    draw.text((margin, strip_top), "Rain timeline", font=font_header, fill=0)
     timeline_top = strip_top + 30
     timeline_h = 90
 
@@ -278,15 +316,6 @@ def create_daily_forecast_screen(data, width, height):
             image.paste(icon, (x0 + (x1 - x0 - 30) // 2, timeline_top + 28))
         _center_text(draw, (x0, timeline_top + 58, x1, timeline_top + 72), _format_value(entry.get("temp"), "°"), font_small, fill=fill)
         _center_text(draw, (x0, timeline_top + 74, x1, timeline_top + 88), _format_value(entry.get("pop"), "%"), font_tiny, fill=fill)
-
-    # Footer recommendation box.
-    footer_top = timeline_top + timeline_h + 10
-    if footer_top > height - margin - 44:
-        footer_top = height - margin - 44
-    draw.rectangle((margin, footer_top, width - margin, height - margin), outline=0)
-    draw.text((margin + 10, footer_top + 8), "Wear / bring", font=font_tiny, fill=0)
-    for idx, line in enumerate(_wrap_text(draw, summary, font_small, width - margin * 2 - 20, max_lines=2)):
-        draw.text((margin + 10, footer_top + 26 + idx * 17), line, font=font_small, fill=0)
 
     return image
 
