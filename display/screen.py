@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
+from datetime import datetime
 import os
 from icons import get_icon
 
@@ -74,6 +75,15 @@ def _format_value(value, suffix=""):
     if value == "--":
         return "--"
     return f"{value}{suffix}"
+
+
+def _format_display_date(date_value):
+    if not date_value:
+        return None
+    try:
+        return datetime.fromisoformat(str(date_value)).strftime("%d %b")
+    except ValueError:
+        return str(date_value)
 
 
 def _as_number(value):
@@ -201,6 +211,8 @@ def create_daily_forecast_screen(data, width, height):
     margin = 18
     city = data.get("city", "Unknown City")
     day_label = data.get("date_label") or data.get("date") or "Today"
+    if str(day_label).lower() == "tomorrow":
+        day_label = _format_display_date(data.get("date")) or day_label
     entries = _filter_forecast_window(data.get("forecast", []))
 
     low_temp = _forecast_number(entries, "temp", min)
@@ -244,7 +256,6 @@ def create_daily_forecast_screen(data, width, height):
     draw.text((summary_x, icon_y + 2), "Daily fit check", font=font_header, fill=0)
     for idx, line in enumerate(_wrap_text(draw, summary, font_medium, width - summary_x - margin, max_lines=2)):
         draw.text((summary_x, icon_y + 30 + idx * 23), line, font=font_medium, fill=0)
-    draw.text((summary_x, icon_y + 78), str(lead_condition).title(), font=font_small, fill=0)
 
     # Four signal cards: rain, high, low, wind.
     card_top = icon_y + icon_size + 18
@@ -275,14 +286,16 @@ def create_daily_forecast_screen(data, width, height):
         value_font = font_large if _text_size(draw, value, font_large)[0] <= card_w - 16 else font_header
         value_lines = _wrap_text(draw, value, value_font, card_w - 16, max_lines=1)
         draw.text((x0 + 8, y0 + 28), value_lines[0], font=value_font, fill=fill)
-        detail_lines = _wrap_text(draw, detail, font_tiny, card_w - 16, max_lines=1)
-        draw.text((x0 + 8, y1 - 22), detail_lines[0], font=font_tiny, fill=fill)
+        detail_font = font_medium if icon_condition in ("clear", "snow") else font_tiny
+        detail_lines = _wrap_text(draw, detail, detail_font, card_w - 16, max_lines=1)
+        detail_y = y1 - 30 if icon_condition in ("clear", "snow") else y1 - 26
+        draw.text((x0 + 8, detail_y), detail_lines[0], font=detail_font, fill=fill)
 
     # Hourly forecast strip
-    strip_top = card_top + card_h + 18
-    draw.text((margin, strip_top), "Rain timeline", font=font_header, fill=0)
+    strip_top = card_top + card_h + 34
+    draw.text((margin, strip_top), "Forecasts", font=font_header, fill=0)
     timeline_top = strip_top + 30
-    timeline_h = 90
+    timeline_h = 118
 
     max_boxes = 8
     if len(entries) > max_boxes:
@@ -307,15 +320,16 @@ def create_daily_forecast_screen(data, width, height):
             draw.rectangle((x0, timeline_top, x1, timeline_top + timeline_h), outline=0)
             fill = 0
 
-        _center_text(draw, (x0, timeline_top + 5, x1, timeline_top + 23), entry.get("time", "--:--"), font_tiny, fill=fill)
-        icon = get_icon(entry.get("condition", lead_condition), (30, 30))
+        _center_text(draw, (x0, timeline_top + 8, x1, timeline_top + 28), entry.get("time", "--:--"), font_tiny, fill=fill)
+        icon_size = 34
+        icon = get_icon(entry.get("condition", lead_condition), (icon_size, icon_size))
         if rainy:
             inverted = Image.eval(icon.convert("1"), lambda px: 255 - px)
-            image.paste(inverted, (x0 + (x1 - x0 - 30) // 2, timeline_top + 28))
+            image.paste(inverted, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 34))
         else:
-            image.paste(icon, (x0 + (x1 - x0 - 30) // 2, timeline_top + 28))
-        _center_text(draw, (x0, timeline_top + 58, x1, timeline_top + 72), _format_value(entry.get("temp"), "°"), font_small, fill=fill)
-        _center_text(draw, (x0, timeline_top + 74, x1, timeline_top + 88), _format_value(entry.get("pop"), "%"), font_tiny, fill=fill)
+            image.paste(icon, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 34))
+        _center_text(draw, (x0, timeline_top + 74, x1, timeline_top + 94), _format_value(entry.get("temp"), "°"), font_small, fill=fill)
+        _center_text(draw, (x0, timeline_top + 96, x1, timeline_top + 114), _format_value(entry.get("pop"), "%"), font_tiny, fill=fill)
 
     return image
 
