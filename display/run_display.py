@@ -2,7 +2,7 @@ from PIL import Image
 import os
 import sys
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timedelta
 
 # Ensure repo root is on sys.path so sibling packages like `weather` can be imported
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -158,8 +158,14 @@ def main():
         try:
             live_city = os.getenv("CITY", data.get("city", "London"))
             if daily_mode:
-                data_live = fetch_daily_forecast(live_city, target_date=date.today().isoformat())
-                data_live["date_label"] = "Today"
+                target_date = date.today()
+                date_label = "Today"
+                if datetime.now().hour >= 20:
+                    target_date = target_date + timedelta(days=1)
+                    date_label = "Tomorrow"
+
+                data_live = fetch_daily_forecast(live_city, target_date=target_date.isoformat())
+                data_live["date_label"] = date_label
                 image = create_daily_forecast_screen(data_live, width, height)
             else:
                 data_live = fetch_weather(live_city)
