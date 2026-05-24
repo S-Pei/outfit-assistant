@@ -3,22 +3,31 @@ from pathlib import Path
 import os
 from icons import get_icon
 
+def get_font_path():
+    if os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+        return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"  # Raspberry Pi / Linux
+
+    if os.path.exists("/System/Library/Fonts/Supplemental/Arial.ttf"):
+        return "/System/Library/Fonts/Supplemental/Arial.ttf"  # macOS
+
+    return None
 
 def _load_font(size):
-    # Hard-coded to a Debian/Ubuntu / Raspberry Pi typical TTF path.
-    # Intentionally do not fall back; let it raise if the font is missing.
-    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
+    FONT_PATH = get_font_path()
+    if not FONT_PATH:
+        raise ValueError("Font file not found")
+    return ImageFont.truetype(FONT_PATH, size)
 
 
 def create_weather_screen(data, width, height):
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    font_title = _load_font(40)
-    font_header = _load_font(30)
-    font_large = _load_font(220)
-    font_medium = _load_font(28)
-    font_small = _load_font(20)
+    font_title = _load_font(28)
+    font_header = _load_font(20)
+    font_large = _load_font(56)
+    font_medium = _load_font(24)
+    font_small = _load_font(16)
 
     city = data.get("city", "Unknown City")
     timestamp = data.get("time", "--:--")
@@ -42,16 +51,16 @@ def create_weather_screen(data, width, height):
     temp_text = f"{temp}°C"
     temp_box = draw.textbbox((0, 0), temp_text, font=font_large)
     temp_height = temp_box[3] - temp_box[1]
-    temp_y = margin + 60
+    temp_y = margin + 55
     draw.text((margin, temp_y), temp_text, font=font_large, fill=0)
-    condition_y = temp_y + temp_height + 8
+    condition_y = temp_y + temp_height + 35
     draw.text((margin, condition_y), condition.title(), font=font_medium, fill=0)
     condition_box = draw.textbbox((0, 0), condition.title(), font=font_medium)
     condition_height = condition_box[3] - condition_box[1]
 
     # Icon (paste from icons module)
-    icon_size = min(180, width // 3)
-    icon_top = margin + 54
+    icon_size = min(100, width // 5)
+    icon_top = temp_y + max(0, (temp_height - icon_size) // 2)
     icon_box = (width - margin - icon_size, icon_top, width - margin, icon_top + icon_size)
     x0, y0, x1, y1 = icon_box
     iw = max(1, x1 - x0)
@@ -59,9 +68,9 @@ def create_weather_screen(data, width, height):
     icon_img = get_icon(condition, (iw, ih))
     image.paste(icon_img, (x0, y0))
 
-    body_bottom = max(condition_y + condition_height + 12, y1)
-    stats_top = body_bottom + 24
-    stats_height = min(110, max(80, height - margin - stats_top - 90))
+    body_bottom = max(condition_y + condition_height + 15, y1)
+    stats_top = body_bottom + 16
+    stats_height = min(80, max(60, height - margin - stats_top - 90))
     stats_bottom = stats_top + stats_height
     draw.rectangle((margin, stats_top, width - margin, stats_bottom), outline=0)
 
