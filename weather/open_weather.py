@@ -8,12 +8,13 @@ Returns a dict with keys: city, time, temp, condition, feels, wind, recommendati
 """
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
 
 API_BASE = "https://api.openweathermap.org/data/2.5/weather"
+FORECAST_API_BASE = "https://api.openweathermap.org/data/2.5/forecast"
 
 
 def _make_recommendation(temp_c, condition_text):
@@ -64,11 +65,75 @@ def fetch_weather(city=None, api_key=None, units="metric"):
     }
 
 
+def _normalize_date_param(date_value):
+    if isinstance(date_value, date):
+        return date_value
+    return datetime.fromisoformat(date_value).date()
+
+
+def fetch_daily_forecast(city=None, target_date=None, api_key=None, units="metric"):
+    """Fetch the day forecast for `city` and `target_date`.
+
+    Returns local forecast entries for the specified date.
+    """
+    if not city:
+        raise ValueError("city must be provided")
+
+    key = api_key or os.getenv("OPENWEATHER_API_KEY")
+    if not key:
+        raise RuntimeError("OpenWeather API key not found in environment or api_key param")
+
+    if target_date is None:
+        target_date = datetime.utcnow().date()
+    else:
+        target_date = _normalize_date_param(target_date)
+
+    params = {"q": city, "appid": key, "units": units}
+    resp = requests.get(FORECAST_API_BASE, params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+
+    timezone_offset = data.get("city", {}).get("timezone", 0)
+    entries = []
+    temps = []
+
+    for item in data.get("list", []):
+        dt = datetime.utcfromtimestamp(item["dt"]) + timedelta(seconds=timezone_offset)
+        if dt.date() != target_date:
+            continue
+
+        temp = item.get("main", {}).get("temp")
+        feels_like = item.get("main", {}).get("feels_like")
+        description = item.get("weather", [{}])[0].get("description", "")
+
+        if temp is not None:
+            temps.append(temp)
+
+        entries.append({
+            "time": dt.strftime("%H:%M"),
+            "temp": int(round(temp)) if temp is not None else "--",
+            "feels": int(round(feels_like)) if feels_like is not None else "--",
+            "condition": description.title(),
+            "wind": item.get("wind", {}).get("speed", "--"),
+            "pop": int(round(item.get("pop", 0) * 100)),
+        })
+
+    return {
+        "city": city,
+        "date": target_date.isoformat(),
+        "min_temp": int(round(min(temps))) if temps else "--",
+        "max_temp": int(round(max(temps))) if temps else "--",
+        "forecast": entries,
+    }
+
+
 if __name__ == "__main__":
     # quick CLI test
     try:
         city = os.getenv("CITY", "London")
         weather = fetch_weather(city)
         print(weather)
+        forecast = fetch_daily_forecast(city, target_date=date(2026, 5, 25).isoformat())
+        print(forecast)
     except Exception as e:
         print("Error fetching weather:", e)

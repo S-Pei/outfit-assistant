@@ -19,6 +19,278 @@ def _load_font(size):
     return ImageFont.truetype(FONT_PATH, size)
 
 
+def _text_size(draw, text, font):
+    box = draw.textbbox((0, 0), str(text), font=font)
+    return box[2] - box[0], box[3] - box[1]
+
+
+def _center_text(draw, box, text, font, fill=0):
+    x0, y0, x1, y1 = box
+    text_w, text_h = _text_size(draw, text, font)
+    draw.text(
+        (x0 + (x1 - x0 - text_w) / 2, y0 + (y1 - y0 - text_h) / 2),
+        text,
+        font=font,
+        fill=fill,
+    )
+
+
+def _wrap_text(draw, text, font, max_width, max_lines=2):
+    words = str(text).split()
+    lines = []
+    current = ""
+    consumed_words = 0
+
+    for word in words:
+        candidate = word if not current else f"{current} {word}"
+        if _text_size(draw, candidate, font)[0] <= max_width:
+            current = candidate
+            consumed_words += 1
+            continue
+
+        if current:
+            lines.append(current)
+        current = word
+        consumed_words += 1
+
+        if len(lines) == max_lines:
+            break
+
+    if current and len(lines) < max_lines:
+        lines.append(current)
+
+    if len(lines) == max_lines and consumed_words < len(words):
+        while _text_size(draw, lines[-1] + "...", font)[0] > max_width and len(lines[-1]) > 1:
+            lines[-1] = lines[-1][:-1].rstrip()
+        if not lines[-1].endswith("..."):
+            lines[-1] += "..."
+
+    return lines
+
+
+def _format_value(value, suffix=""):
+    if value is None or value == "":
+        return "--"
+    if value == "--":
+        return "--"
+    return f"{value}{suffix}"
+
+
+def _as_number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _forecast_number(entries, key, reducer):
+    values = [_as_number(entry.get(key)) for entry in entries]
+    values = [value for value in values if value is not None]
+    if not values:
+        return "--"
+    return int(round(reducer(values)))
+
+
+def _wind_label(speed):
+    speed = _as_number(speed)
+    if speed is None:
+        return "--"
+    if speed <= 2:
+        return "Calm"
+    if speed <= 5:
+        return "Light breeze"
+    if speed <= 8:
+        return "Breezy"
+    if speed <= 12:
+        return "Windy"
+    return "Very windy"
+
+
+def _wind_impact(speed):
+    speed = _as_number(speed)
+    if speed is None:
+        return "Wind unknown"
+    if speed <= 2:
+        return "No outfit issue"
+    if speed <= 5:
+        return "Fine outside"
+    if speed <= 8:
+        return "Light layer helps"
+    if speed <= 12:
+        return "Secure loose layers"
+    return "Avoid fragile umbrella"
+
+
+def _rain_window(entries, threshold=35):
+    rainy = [entry for entry in entries if _as_number(entry.get("pop")) is not None and _as_number(entry.get("pop")) >= threshold]
+    if not rainy:
+        return "No major rain window"
+    return f"{rainy[0].get('time', '--:--')} - {rainy[-1].get('time', '--:--')}"
+
+
+def _daily_recommendation(max_pop, max_wind, low_temp, high_temp):
+    advice = []
+    pop_value = _as_number(max_pop)
+    wind_value = _as_number(max_wind)
+    low_value = _as_number(low_temp)
+    high_value = _as_number(high_temp)
+
+    if pop_value is not None and pop_value >= 60:
+        advice.append("Umbrella")
+    elif pop_value is not None and pop_value >= 35:
+        advice.append("Packable rain layer")
+
+    if wind_value is not None and wind_value >= 9:
+        advice.append("Secure layers")
+
+    if low_value is not None and high_value is not None and high_value - low_value >= 8:
+        advice.append("Removable layer")
+    elif low_value is not None and low_value <= 8:
+        advice.append("Warm layer")
+
+    return " | ".join(advice) if advice else "Comfortable outfit weather"
+
+
+def create_daily_forecast_screen(data, width, height):
+    image = Image.new("1", (width, height), 255)
+    draw = ImageDraw.Draw(image)
+
+    font_title = _load_font(26)
+    font_header = _load_font(20)
+    font_large = _load_font(30)
+    font_medium = _load_font(18)
+    font_small = _load_font(14)
+    font_tiny = _load_font(12)
+
+    margin = 18
+    city = data.get("city", "Unknown City")
+    day_label = data.get("date_label") or data.get("date") or "Today"
+    entries = data.get("forecast", [])
+
+    low_temp = data.get("min_temp")
+    if low_temp in (None, "--"):
+        low_temp = _forecast_number(entries, "temp", min)
+
+    high_temp = data.get("max_temp")
+    if high_temp in (None, "--"):
+        high_temp = _forecast_number(entries, "temp", max)
+
+    max_pop = data.get("max_pop")
+    if max_pop in (None, "--"):
+        max_pop = _forecast_number(entries, "pop", max)
+
+    max_wind = data.get("max_wind")
+    if max_wind in (None, "--"):
+        max_wind = _forecast_number(entries, "wind", max)
+
+    rain_window = data.get("rain_window") or _rain_window(entries)
+    summary = data.get("summary") or _daily_recommendation(max_pop, max_wind, low_temp, high_temp)
+
+    # Header
+    draw.text((margin, margin), city.upper(), font=font_title, fill=0)
+    day_w, _ = _text_size(draw, day_label, font_small)
+    draw.text((width - margin - day_w, margin + 7), day_label, font=font_small, fill=0)
+    draw.line((margin, margin + 42, width - margin, margin + 42), fill=0)
+
+    # Lead condition icon and practical summary
+    lead_condition = data.get("condition")
+    if not lead_condition and entries:
+        lead_condition = max(entries, key=lambda entry: _as_number(entry.get("pop")) or 0).get("condition")
+    lead_condition = lead_condition or "Clouds"
+
+    icon_size = 82
+    icon_y = margin + 58
+    image.paste(get_icon(lead_condition, (icon_size, icon_size)), (margin, icon_y))
+
+    summary_x = margin + icon_size + 18
+    draw.text((summary_x, icon_y + 2), "Daily fit check", font=font_header, fill=0)
+    for idx, line in enumerate(_wrap_text(draw, summary, font_medium, width - summary_x - margin, max_lines=2)):
+        draw.text((summary_x, icon_y + 30 + idx * 23), line, font=font_medium, fill=0)
+    draw.text((summary_x, icon_y + 78), str(lead_condition).title(), font=font_small, fill=0)
+
+    # Four signal cards: rain, high, low, wind.
+    card_top = icon_y + icon_size + 18
+    gap = 10
+    card_w = (width - margin * 2 - gap * 3) // 4
+    card_h = 92
+    cards = [
+        ("Rain", _format_value(max_pop, "%"), rain_window, "rain"),
+        ("High", _format_value(high_temp, "°C"), "Warmest point", "clear"),
+        ("Low", _format_value(low_temp, "°C"), "Coolest point", "snow"),
+        ("Wind", _wind_label(max_wind), _wind_impact(max_wind), "wind"),
+    ]
+
+    for idx, (label, value, detail, icon_condition) in enumerate(cards):
+        x0 = margin + idx * (card_w + gap)
+        x1 = x0 + card_w
+        y0 = card_top
+        y1 = y0 + card_h
+        is_rain = label == "Rain" and _as_number(max_pop) is not None and max_pop >= 35
+        if is_rain:
+            draw.rectangle((x0, y0, x1, y1), outline=0, fill=0)
+            fill = 255
+        else:
+            draw.rectangle((x0, y0, x1, y1), outline=0)
+            fill = 0
+
+        draw.text((x0 + 8, y0 + 6), label, font=font_small, fill=fill)
+        value_font = font_large if _text_size(draw, value, font_large)[0] <= card_w - 16 else font_header
+        value_lines = _wrap_text(draw, value, value_font, card_w - 16, max_lines=1)
+        draw.text((x0 + 8, y0 + 28), value_lines[0], font=value_font, fill=fill)
+        detail_lines = _wrap_text(draw, detail, font_tiny, card_w - 16, max_lines=1)
+        draw.text((x0 + 8, y1 - 22), detail_lines[0], font=font_tiny, fill=fill)
+
+    # Hourly forecast strip
+    strip_top = card_top + card_h + 18
+    draw.text((margin, strip_top), "Hourly forecast", font=font_header, fill=0)
+    timeline_top = strip_top + 30
+    timeline_h = 90
+
+    max_boxes = 8
+    if len(entries) > max_boxes:
+        step = float(len(entries)) / max_boxes
+        entries_to_draw = [entries[int(i * step)] for i in range(max_boxes)]
+    else:
+        entries_to_draw = entries
+
+    if not entries_to_draw:
+        entries_to_draw = [{"time": "--:--", "temp": "--", "condition": lead_condition, "pop": "--", "wind": "--"}]
+
+    box_w = (width - margin * 2) // len(entries_to_draw)
+    for idx, entry in enumerate(entries_to_draw):
+        x0 = margin + idx * box_w
+        x1 = margin + (idx + 1) * box_w - 4
+        pop = _as_number(entry.get("pop"))
+        rainy = pop is not None and pop >= 35
+        if rainy:
+            draw.rectangle((x0, timeline_top, x1, timeline_top + timeline_h), fill=0)
+            fill = 255
+        else:
+            draw.rectangle((x0, timeline_top, x1, timeline_top + timeline_h), outline=0)
+            fill = 0
+
+        _center_text(draw, (x0, timeline_top + 5, x1, timeline_top + 23), entry.get("time", "--:--"), font_tiny, fill=fill)
+        icon = get_icon(entry.get("condition", lead_condition), (30, 30))
+        if rainy:
+            inverted = Image.eval(icon.convert("1"), lambda px: 255 - px)
+            image.paste(inverted, (x0 + (x1 - x0 - 30) // 2, timeline_top + 28))
+        else:
+            image.paste(icon, (x0 + (x1 - x0 - 30) // 2, timeline_top + 28))
+        _center_text(draw, (x0, timeline_top + 58, x1, timeline_top + 72), _format_value(entry.get("temp"), "°"), font_small, fill=fill)
+        _center_text(draw, (x0, timeline_top + 74, x1, timeline_top + 88), _format_value(entry.get("pop"), "%"), font_tiny, fill=fill)
+
+    # Footer recommendation box.
+    footer_top = timeline_top + timeline_h + 10
+    if footer_top > height - margin - 44:
+        footer_top = height - margin - 44
+    draw.rectangle((margin, footer_top, width - margin, height - margin), outline=0)
+    draw.text((margin + 10, footer_top + 8), "Wear / bring", font=font_tiny, fill=0)
+    for idx, line in enumerate(_wrap_text(draw, summary, font_small, width - margin * 2 - 20, max_lines=2)):
+        draw.text((margin + 10, footer_top + 26 + idx * 17), line, font=font_small, fill=0)
+
+    return image
+
+
 def create_weather_screen(data, width, height):
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
