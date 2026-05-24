@@ -320,16 +320,16 @@ def create_daily_forecast_screen(data, width, height):
             draw.rectangle((x0, timeline_top, x1, timeline_top + timeline_h), outline=0)
             fill = 0
 
-        _center_text(draw, (x0, timeline_top + 8, x1, timeline_top + 28), entry.get("time", "--:--"), font_tiny, fill=fill)
-        icon_size = 34
+        _center_text(draw, (x0, timeline_top + 8, x1, timeline_top + 28), entry.get("time", "--:--"), font_small, fill=fill)
+        icon_size = 40
         icon = get_icon(entry.get("condition", lead_condition), (icon_size, icon_size))
         if rainy:
             inverted = Image.eval(icon.convert("1"), lambda px: 255 - px)
             image.paste(inverted, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 34))
         else:
             image.paste(icon, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 34))
-        _center_text(draw, (x0, timeline_top + 74, x1, timeline_top + 94), _format_value(entry.get("temp"), "°"), font_small, fill=fill)
-        _center_text(draw, (x0, timeline_top + 96, x1, timeline_top + 114), _format_value(entry.get("pop"), "%"), font_tiny, fill=fill)
+        _center_text(draw, (x0, timeline_top + 76, x1, timeline_top + 96), _format_value(entry.get("temp"), "°"), font_medium, fill=fill)
+        _center_text(draw, (x0, timeline_top + 98, x1, timeline_top + 116), _format_value(entry.get("pop"), "%"), font_small, fill=fill)
 
     return image
 
