@@ -94,6 +94,8 @@ def fetch_daily_forecast(city=None, target_date=None, api_key=None, units="metri
     data = resp.json()
 
     timezone_offset = data.get("city", {}).get("timezone", 0)
+    sunset = data.get("city", {}).get("sunset")
+    sunset_local = datetime.utcfromtimestamp(sunset) + timedelta(seconds=timezone_offset) if sunset else None
     entries = []
     temps = []
 
@@ -123,6 +125,7 @@ def fetch_daily_forecast(city=None, target_date=None, api_key=None, units="metri
         "date": target_date.isoformat(),
         "min_temp": int(round(min(temps))) if temps else "--",
         "max_temp": int(round(max(temps))) if temps else "--",
+        "sunset": sunset_local.strftime("%H:%M") if sunset_local else "--",
         "forecast": entries,
     }
 

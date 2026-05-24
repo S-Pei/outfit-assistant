@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime
 import os
 from icons import get_icon
+from recommendation import make_daily_recommendation
 
 def get_font_path():
     if os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
@@ -101,6 +102,14 @@ def _forecast_hour(entry):
         return None
 
 
+def _time_minutes(time_text):
+    try:
+        hour, minute = str(time_text).split(":", 1)
+        return int(hour) * 60 + int(minute)
+    except (TypeError, ValueError):
+        return None
+
+
 def _filter_forecast_window(entries, start_hour=7, end_hour=23):
     filtered = []
     for entry in entries:
@@ -135,6 +144,22 @@ def _forecast_time_for(entries, key, reducer):
     if not best_entry:
         return "--:--"
     return best_entry.get("time", "--:--")
+
+
+def _forecast_temp_after(entries, time_text):
+    threshold = _time_minutes(time_text)
+    if threshold is None:
+        return "--"
+
+    temps = []
+    for entry in entries:
+        entry_minutes = _time_minutes(entry.get("time"))
+        if entry_minutes is not None and entry_minutes >= threshold:
+            temp = _as_number(entry.get("temp"))
+            if temp is not None:
+                temps.append(temp)
+
+    return int(round(min(temps))) if temps else "--"
 
 
 def _wind_label(speed):
@@ -174,34 +199,11 @@ def _rain_timing(entries, max_pop, threshold=35):
     return True, rainy[0].get("time", "--:--"), f"Stops {rainy[-1].get('time', '--:--')}"
 
 
-def _daily_recommendation(max_pop, max_wind, low_temp, high_temp):
-    advice = []
-    pop_value = _as_number(max_pop)
-    wind_value = _as_number(max_wind)
-    low_value = _as_number(low_temp)
-    high_value = _as_number(high_temp)
-
-    if pop_value is not None and pop_value >= 60:
-        advice.append("Umbrella")
-    elif pop_value is not None and pop_value >= 35:
-        advice.append("Packable rain layer")
-
-    if wind_value is not None and wind_value >= 9:
-        advice.append("Secure layers")
-
-    if low_value is not None and high_value is not None and high_value - low_value >= 8:
-        advice.append("Removable layer")
-    elif low_value is not None and low_value <= 8:
-        advice.append("Warm layer")
-
-    return " | ".join(advice) if advice else "Comfortable outfit weather"
-
-
 def create_daily_forecast_screen(data, width, height):
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    font_title = _load_font(26)
+    font_title = _load_font(22)
     font_header = _load_font(20)
     font_large = _load_font(30)
     font_medium = _load_font(18)
@@ -214,16 +216,19 @@ def create_daily_forecast_screen(data, width, height):
     if str(day_label).lower() == "tomorrow":
         day_label = _format_display_date(data.get("date")) or day_label
     entries = _filter_forecast_window(data.get("forecast", []))
+    high_low_entries = _filter_forecast_window(entries, start_hour=8)
 
-    low_temp = _forecast_number(entries, "temp", min)
-    if low_temp in (None, "--"):
+    recommendation_low_temp = _forecast_number(high_low_entries, "temp", min)
+    low_temp = recommendation_low_temp
+    if low_temp == "--":
         low_temp = data.get("min_temp")
-    low_time = data.get("min_temp_time") or _forecast_time_for(entries, "temp", min)
+    low_time = data.get("min_temp_time") or _forecast_time_for(high_low_entries, "temp", min)
 
-    high_temp = _forecast_number(entries, "temp", max)
-    if high_temp in (None, "--"):
+    recommendation_high_temp = _forecast_number(high_low_entries, "temp", max)
+    high_temp = recommendation_high_temp
+    if high_temp == "--":
         high_temp = data.get("max_temp")
-    high_time = data.get("max_temp_time") or _forecast_time_for(entries, "temp", max)
+    high_time = data.get("max_temp_time") or _forecast_time_for(high_low_entries, "temp", max)
 
     max_pop = data.get("max_pop")
     if max_pop in (None, "--"):
@@ -233,11 +238,26 @@ def create_daily_forecast_screen(data, width, height):
     if max_wind in (None, "--"):
         max_wind = _forecast_number(entries, "wind", max)
 
+    sunset = data.get("sunset")
+    night_temp = data.get("night_temp")
+    if night_temp in (None, "--"):
+        night_temp = _forecast_temp_after(entries, sunset)
+
     has_rain, rain_start, rain_stop = _rain_timing(entries, max_pop)
-    summary = data.get("summary") or _daily_recommendation(max_pop, max_wind, low_temp, high_temp)
+    summary = data.get("summary") or make_daily_recommendation(
+        max_pop,
+        max_wind,
+        recommendation_low_temp,
+        recommendation_high_temp,
+        night_temp,
+    )
 
     # Header
-    draw.text((margin, margin), city.upper(), font=font_title, fill=0)
+    header_title = "GOOD MORNING UWU"
+    draw.text((margin, margin), header_title, font=font_title, fill=0)
+    current_time = data.get("time") or datetime.now().strftime("%H:%M")
+    time_w, _ = _text_size(draw, current_time, font_header)
+    draw.text(((width - time_w) / 2, margin + 6), current_time, font=font_header, fill=0)
     day_w, _ = _text_size(draw, day_label, font_small)
     draw.text((width - margin - day_w, margin + 7), day_label, font=font_small, fill=0)
     draw.line((margin, margin + 42, width - margin, margin + 42), fill=0)
@@ -253,9 +273,8 @@ def create_daily_forecast_screen(data, width, height):
     image.paste(get_icon(lead_condition, (icon_size, icon_size)), (margin, icon_y))
 
     summary_x = margin + icon_size + 18
-    draw.text((summary_x, icon_y + 2), "Daily fit check", font=font_header, fill=0)
     for idx, line in enumerate(_wrap_text(draw, summary, font_medium, width - summary_x - margin, max_lines=2)):
-        draw.text((summary_x, icon_y + 30 + idx * 23), line, font=font_medium, fill=0)
+        draw.text((summary_x, icon_y + 18 + idx * 23), line, font=font_medium, fill=0)
 
     # Four signal cards: rain, high, low, wind.
     card_top = icon_y + icon_size + 18
@@ -295,7 +314,7 @@ def create_daily_forecast_screen(data, width, height):
     strip_top = card_top + card_h + 34
     draw.text((margin, strip_top), "Forecasts", font=font_header, fill=0)
     timeline_top = strip_top + 30
-    timeline_h = 118
+    timeline_h = 130
 
     max_boxes = 8
     if len(entries) > max_boxes:
@@ -320,16 +339,16 @@ def create_daily_forecast_screen(data, width, height):
             draw.rectangle((x0, timeline_top, x1, timeline_top + timeline_h), outline=0)
             fill = 0
 
-        _center_text(draw, (x0, timeline_top + 8, x1, timeline_top + 28), entry.get("time", "--:--"), font_small, fill=fill)
-        icon_size = 40
+        _center_text(draw, (x0, timeline_top + 8, x1, timeline_top + 32), entry.get("time", "--:--"), font_medium, fill=fill)
+        icon_size = 44
         icon = get_icon(entry.get("condition", lead_condition), (icon_size, icon_size))
         if rainy:
             inverted = Image.eval(icon.convert("1"), lambda px: 255 - px)
-            image.paste(inverted, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 34))
+            image.paste(inverted, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 38))
         else:
-            image.paste(icon, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 34))
-        _center_text(draw, (x0, timeline_top + 76, x1, timeline_top + 96), _format_value(entry.get("temp"), "°"), font_medium, fill=fill)
-        _center_text(draw, (x0, timeline_top + 98, x1, timeline_top + 116), _format_value(entry.get("pop"), "%"), font_small, fill=fill)
+            image.paste(icon, (x0 + (x1 - x0 - icon_size) // 2, timeline_top + 38))
+        _center_text(draw, (x0, timeline_top + 84, x1, timeline_top + 106), _format_value(entry.get("temp"), "°"), font_header, fill=fill)
+        _center_text(draw, (x0, timeline_top + 108, x1, timeline_top + 128), _format_value(entry.get("pop"), "%"), font_medium, fill=fill)
 
     return image
 
