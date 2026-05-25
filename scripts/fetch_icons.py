@@ -15,7 +15,7 @@ ICON_MAP = {
     "mist": "50d",
 }
 
-OUT_DIR = Path(__file__).resolve().parent / "assets"
+OUT_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def download_icon(code, out_path):

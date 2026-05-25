@@ -1,7 +1,7 @@
 """OpenWeather helper: fetch current weather and return a display-friendly dict.
 
 Usage:
-    from weather.open_weather import fetch_weather
+    from services.open_weather import fetch_weather
     data = fetch_weather('London')
 
 Returns a dict with keys: city, time, temp, condition, feels, wind, recommendation

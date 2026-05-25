@@ -1,4 +1,9 @@
 venv/
 __pycache__/
 .env
+AGENTS.md
 *.pyc
+previews/
+*_preview*.png
+daily_forecast_demo*.png
+weather_screen_preview.png

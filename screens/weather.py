@@ -2,23 +2,34 @@ from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from datetime import datetime
 import os
-from icons import get_icon
-from recommendation import make_daily_recommendation
+from display.icons import get_icon
+from services.recommendation import make_daily_recommendation
+
+ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+
+def get_font_paths():
+    candidates = [
+        ASSETS_DIR / "fonts" / "DejaVuSans.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+    ]
+    return [path for path in candidates if path.exists()]
+
 
 def get_font_path():
-    if os.path.exists("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
-        return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"  # Raspberry Pi / Linux
-
-    if os.path.exists("/System/Library/Fonts/Supplemental/Arial.ttf"):
-        return "/System/Library/Fonts/Supplemental/Arial.ttf"  # macOS
-
-    return None
+    paths = get_font_paths()
+    return str(paths[0]) if paths else None
 
 def _load_font(size):
-    FONT_PATH = get_font_path()
-    if not FONT_PATH:
-        raise ValueError("Font file not found")
-    return ImageFont.truetype(FONT_PATH, size)
+    attempted = []
+    for font_path in get_font_paths():
+        attempted.append(str(font_path))
+        try:
+            return ImageFont.truetype(str(font_path), size)
+        except OSError:
+            continue
+
+    raise ValueError(f"Font file not found or unreadable. Tried: {', '.join(attempted) or 'none'}")
 
 
 def _text_size(draw, text, font):

@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 
 
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
 
 
 def _load_asset(name, size):

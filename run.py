@@ -1,5 +1,7 @@
 import os
+import argparse
 import sys
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -7,43 +9,16 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-DISPLAY_DIR = REPO_ROOT / "display"
-if str(DISPLAY_DIR) not in sys.path:
-    sys.path.insert(0, str(DISPLAY_DIR))
+from app.platform import is_raspberry_pi
+from display.epaper import display_on_epaper, get_epaper_dimensions
+from display.preview import save_preview
+from screens.greeting import create_greeting_screen
+from screens.weather import create_daily_forecast_screen
+from services.open_weather import fetch_daily_forecast
 
-from run_display import display_on_epaper, get_epaper_dimensions, save_preview
-from screen import create_daily_forecast_screen
-from weather.open_weather import fetch_daily_forecast
-
-
-def is_raspberry_pi():
-    model_path = Path("/proc/device-tree/model")
-    if not model_path.exists():
-        return False
-
-    try:
-        return "raspberry pi" in model_path.read_text(errors="ignore").lower()
-    except OSError:
-        return False
-
-
-def read_key():
-    if not sys.stdin.isatty():
-        return sys.stdin.read(1)
-
-    try:
-        import termios
-        import tty
-    except ImportError:
-        return input().strip()[:1]
-
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        return sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+PREVIEW_DIR = REPO_ROOT / "previews"
+DEFAULT_SIZE = (648, 480)
+WEATHER_WINDOW_MINUTES = 10
 
 
 def get_target_date():
@@ -61,35 +36,102 @@ def fetch_screen_data():
     return data
 
 
-def render_daily_forecast():
-    on_pi = is_raspberry_pi()
+def get_screen_size(on_pi):
     epaper_dims = get_epaper_dimensions() if on_pi else None
-    width, height = epaper_dims if epaper_dims and all(epaper_dims) else (648, 480)
+    return epaper_dims if epaper_dims and all(epaper_dims) else DEFAULT_SIZE
 
-    data = fetch_screen_data()
-    image = create_daily_forecast_screen(data, width, height)
 
+def show_image(image, on_pi, preview_name):
     if on_pi:
         display_on_epaper(image)
     else:
-        save_preview(image, filename="daily_forecast_key_preview.png", scale=2)
+        save_preview(image, filename=PREVIEW_DIR / preview_name, scale=2)
+
+
+def render_greeting(now=None):
+    on_pi = is_raspberry_pi()
+    width, height = get_screen_size(on_pi)
+    image = create_greeting_screen(width, height, now=now)
+    show_image(image, on_pi, "greeting_preview.png")
+
+
+def render_daily_forecast():
+    on_pi = is_raspberry_pi()
+    width, height = get_screen_size(on_pi)
+    data = fetch_screen_data()
+    image = create_daily_forecast_screen(data, width, height)
+    show_image(image, on_pi, "daily_forecast_key_preview.png")
+
+
+def desired_screen(now):
+    return "weather" if now.minute < WEATHER_WINDOW_MINUTES else "greeting"
+
+
+def render_current_screen(now=None):
+    now = now or datetime.now()
+    if desired_screen(now) == "weather":
+        render_daily_forecast()
+        return "weather"
+
+    render_greeting(now=now)
+    return "greeting"
+
+
+def render_slot(now):
+    screen = desired_screen(now)
+    if screen == "weather":
+        return (screen, now.date().isoformat(), now.hour)
+    return (screen, now.date().isoformat(), now.hour, now.minute)
+
+
+def run_display_loop(poll_seconds=30):
+    print("Rendering greeting by default. Weather is shown for the first 10 minutes of every hour.")
+    print("Press Ctrl+C to stop.")
+
+    last_slot = None
+    while True:
+        now = datetime.now()
+        slot = render_slot(now)
+
+        if slot != last_slot:
+            try:
+                screen = render_current_screen(now)
+            except Exception as exc:
+                print(f"Display update failed while rendering {desired_screen(now)}: {exc}")
+                raise
+
+            print(f"Rendered {screen} at {now:%H:%M}.")
+            last_slot = slot
+
+        time.sleep(poll_seconds)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the outfit assistant e-paper display.")
+    parser.add_argument("--once", action="store_true", help="Render the current scheduled screen once and exit.")
+    parser.add_argument("--poll-seconds", type=int, default=30, help="Seconds between schedule checks.")
+    parser.add_argument("--weather", action="store_true", help="Render the weather screen once and exit.")
+    parser.add_argument("--greeting", action="store_true", help="Render the greeting screen once and exit.")
+    return parser.parse_args()
 
 
 def main():
-    print("Press 1 to render the daily forecast screen. Press q to quit.")
+    args = parse_args()
 
-    while True:
-        key = read_key()
-        print()
+    if args.weather:
+        render_daily_forecast()
+        return
 
-        if key == "1":
-            render_daily_forecast()
-            print("Ready. Press 1 to render again, or q to quit.")
-        elif key in ("q", "Q"):
-            print("Exiting.")
-            return
-        else:
-            print(f"Ignored key: {key!r}. Press 1 to render, or q to quit.")
+    if args.greeting:
+        render_greeting()
+        return
+
+    if args.once:
+        rendered = render_current_screen()
+        print(f"Rendered {rendered}.")
+        return
+
+    run_display_loop(poll_seconds=args.poll_seconds)
 
 
 if __name__ == "__main__":
