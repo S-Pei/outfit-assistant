@@ -1,6 +1,5 @@
 import os
 import argparse
-import select
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -10,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.platform import is_raspberry_pi, read_key
+from app.platform import is_raspberry_pi, read_key, read_key_with_timeout
 from display.epaper import display_on_epaper, get_epaper_dimensions
 from display.preview import save_preview
 from screens.greeting import create_greeting_screen
@@ -113,13 +112,7 @@ def run_display_loop(poll_seconds=30):
 
 
 def _read_key_with_timeout(timeout_seconds):
-    if not sys.stdin.isatty():
-        return read_key()
-
-    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
-    if not ready:
-        return None
-    return read_key()
+    return read_key_with_timeout(timeout_seconds)
 
 
 def _seconds_until_next_minute(now=None):
@@ -181,7 +174,7 @@ def run_button_loop(idle_seconds=BUTTON_WEATHER_SECONDS):
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the outfit assistant e-paper display.")
     parser.add_argument("--once", action="store_true", help="Render the current scheduled screen once and exit.")
-    parser.add_argument("--poll-seconds", type=int, default=300, help="Seconds between schedule checks.")
+    parser.add_argument("--poll-seconds", type=int, default=30, help="Seconds between schedule checks.")
     parser.add_argument("--weather", action="store_true", help="Render the weather screen once and exit.")
     parser.add_argument("--greeting", action="store_true", help="Render the greeting screen once and exit.")
     parser.add_argument("--button", action="store_true", help="Wait for keypresses; press 1 for weather or 2 for greeting.")
