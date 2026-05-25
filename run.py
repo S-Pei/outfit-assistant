@@ -84,7 +84,7 @@ def render_slot(now):
     return (screen, now.date().isoformat(), now.hour, now.minute)
 
 
-def run_display_loop(poll_seconds=30):
+def run_display_loop(poll_seconds=300):
     print("Rendering greeting by default. Weather is shown for the first 10 minutes of every hour.")
     print("Press Ctrl+C to stop.")
 
