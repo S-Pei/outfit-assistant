@@ -134,8 +134,8 @@ def _seconds_until_next_minute(now=None):
 
 
 def run_button_loop(idle_seconds=BUTTON_IDLE_SECONDS):
-    print("Button mode. Press 1 for weather, 2 for greeting, 3 for fact. Non-greeting screens idle back to greeting after 10 minutes. Press q to quit.")
     render_greeting()
+    print("Button mode ready. Press 1 for weather, 2 for greeting, 3 for fact. Non-greeting screens idle back to greeting after 10 minutes. Press q to quit.")
     current_screen = "greeting"
     active_started_at = None
 
