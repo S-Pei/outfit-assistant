@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.platform import is_raspberry_pi
+from app.platform import is_raspberry_pi, read_key
 from display.epaper import display_on_epaper, get_epaper_dimensions
 from display.preview import save_preview
 from screens.greeting import create_greeting_screen
@@ -106,12 +106,35 @@ def run_display_loop(poll_seconds=300):
         time.sleep(poll_seconds)
 
 
+def run_button_loop():
+    print("Button mode. Press 1 to render weather. Press q to quit.")
+
+    while True:
+        key = read_key()
+        print()
+
+        if key == "1":
+            try:
+                render_daily_forecast()
+            except Exception as exc:
+                print(f"Weather render failed: {exc}")
+                raise
+
+            print("Rendered weather. Press 1 to render again, or q to quit.")
+        elif key in ("q", "Q"):
+            print("Exiting.")
+            return
+        else:
+            print(f"Ignored key: {key!r}. Press 1 to render weather, or q to quit.")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the outfit assistant e-paper display.")
     parser.add_argument("--once", action="store_true", help="Render the current scheduled screen once and exit.")
-    parser.add_argument("--poll-seconds", type=int, default=30, help="Seconds between schedule checks.")
+    parser.add_argument("--poll-seconds", type=int, default=300, help="Seconds between schedule checks.")
     parser.add_argument("--weather", action="store_true", help="Render the weather screen once and exit.")
     parser.add_argument("--greeting", action="store_true", help="Render the greeting screen once and exit.")
+    parser.add_argument("--button", action="store_true", help="Wait for keypresses; press 1 to render weather.")
     return parser.parse_args()
 
 
@@ -129,6 +152,10 @@ def main():
     if args.once:
         rendered = render_current_screen()
         print(f"Rendered {rendered}.")
+        return
+
+    if args.button:
+        run_button_loop()
         return
 
     run_display_loop(poll_seconds=args.poll_seconds)
