@@ -1,5 +1,6 @@
 import os
 import argparse
+import select
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -19,6 +20,7 @@ from services.open_weather import fetch_daily_forecast
 PREVIEW_DIR = REPO_ROOT / "previews"
 DEFAULT_SIZE = (648, 480)
 WEATHER_WINDOW_MINUTES = 10
+BUTTON_WEATHER_SECONDS = 10 * 60
 
 
 def get_target_date():
@@ -41,39 +43,39 @@ def get_screen_size(on_pi):
     return epaper_dims if epaper_dims and all(epaper_dims) else DEFAULT_SIZE
 
 
-def show_image(image, on_pi, preview_name):
+def show_image(image, on_pi, preview_name, clear=False):
     if on_pi:
-        display_on_epaper(image)
+        display_on_epaper(image, clear=clear)
     else:
         save_preview(image, filename=PREVIEW_DIR / preview_name, scale=2)
 
 
-def render_greeting(now=None):
+def render_greeting(now=None, clear=False):
     on_pi = is_raspberry_pi()
     width, height = get_screen_size(on_pi)
     image = create_greeting_screen(width, height, now=now)
-    show_image(image, on_pi, "greeting_preview.png")
+    show_image(image, on_pi, "greeting_preview.png", clear=clear)
 
 
-def render_daily_forecast():
+def render_daily_forecast(clear=False):
     on_pi = is_raspberry_pi()
     width, height = get_screen_size(on_pi)
     data = fetch_screen_data()
     image = create_daily_forecast_screen(data, width, height)
-    show_image(image, on_pi, "daily_forecast_key_preview.png")
+    show_image(image, on_pi, "daily_forecast_key_preview.png", clear=clear)
 
 
 def desired_screen(now):
     return "weather" if now.minute < WEATHER_WINDOW_MINUTES else "greeting"
 
 
-def render_current_screen(now=None):
+def render_current_screen(now=None, clear=False):
     now = now or datetime.now()
     if desired_screen(now) == "weather":
-        render_daily_forecast()
+        render_daily_forecast(clear=clear)
         return "weather"
 
-    render_greeting(now=now)
+    render_greeting(now=now, clear=clear)
     return "greeting"
 
 
@@ -84,48 +86,96 @@ def render_slot(now):
     return (screen, now.date().isoformat(), now.hour, now.minute)
 
 
-def run_display_loop(poll_seconds=300):
+def run_display_loop(poll_seconds=30):
     print("Rendering greeting by default. Weather is shown for the first 10 minutes of every hour.")
     print("Press Ctrl+C to stop.")
 
     last_slot = None
+    last_screen = None
     while True:
         now = datetime.now()
         slot = render_slot(now)
 
         if slot != last_slot:
+            expected_screen = desired_screen(now)
+            clear = last_screen is not None and expected_screen != last_screen
             try:
-                screen = render_current_screen(now)
+                screen = render_current_screen(now, clear=clear)
             except Exception as exc:
                 print(f"Display update failed while rendering {desired_screen(now)}: {exc}")
                 raise
 
             print(f"Rendered {screen} at {now:%H:%M}.")
             last_slot = slot
+            last_screen = screen
 
         time.sleep(poll_seconds)
 
 
-def run_button_loop():
-    print("Button mode. Press 1 to render weather. Press q to quit.")
+def _read_key_with_timeout(timeout_seconds):
+    if not sys.stdin.isatty():
+        return read_key()
+
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
+    if not ready:
+        return None
+    return read_key()
+
+
+def _seconds_until_next_minute(now=None):
+    now = now or datetime.now()
+    return max(1, 60 - now.second)
+
+
+def run_button_loop(idle_seconds=BUTTON_WEATHER_SECONDS):
+    print("Button mode. Press 1 for weather, 2 for greeting. Weather idles back to greeting after 10 minutes. Press q to quit.")
+    render_greeting()
+    current_screen = "greeting"
+    weather_started_at = None
 
     while True:
-        key = read_key()
-        print()
+        if weather_started_at is None:
+            key = _read_key_with_timeout(_seconds_until_next_minute())
+            if key is None:
+                render_greeting()
+                current_screen = "greeting"
+                print(f"Refreshed greeting at {datetime.now():%H:%M}.")
+                continue
+            print()
+        else:
+            remaining = idle_seconds - (time.monotonic() - weather_started_at)
+            if remaining <= 0:
+                render_greeting(clear=current_screen != "greeting")
+                current_screen = "greeting"
+                weather_started_at = None
+                print("Returned to greeting. Press 1 for weather, 2 for greeting, or q to quit.")
+                continue
+
+            key = _read_key_with_timeout(remaining)
+            if key is None:
+                continue
+            print()
 
         if key == "1":
             try:
-                render_daily_forecast()
+                render_daily_forecast(clear=current_screen != "weather")
             except Exception as exc:
                 print(f"Weather render failed: {exc}")
                 raise
 
-            print("Rendered weather. Press 1 to render again, or q to quit.")
+            current_screen = "weather"
+            weather_started_at = time.monotonic()
+            print("Rendered weather. It will return to greeting after 10 minutes. Press 1 to refresh, 2 for greeting, or q to quit.")
+        elif key == "2":
+            render_greeting(clear=current_screen != "greeting")
+            current_screen = "greeting"
+            weather_started_at = None
+            print("Rendered greeting. Press 1 for weather, 2 to refresh greeting, or q to quit.")
         elif key in ("q", "Q"):
             print("Exiting.")
             return
         else:
-            print(f"Ignored key: {key!r}. Press 1 to render weather, or q to quit.")
+            print(f"Ignored key: {key!r}. Press 1 for weather, 2 for greeting, or q to quit.")
 
 
 def parse_args():
@@ -134,7 +184,7 @@ def parse_args():
     parser.add_argument("--poll-seconds", type=int, default=300, help="Seconds between schedule checks.")
     parser.add_argument("--weather", action="store_true", help="Render the weather screen once and exit.")
     parser.add_argument("--greeting", action="store_true", help="Render the greeting screen once and exit.")
-    parser.add_argument("--button", action="store_true", help="Wait for keypresses; press 1 to render weather.")
+    parser.add_argument("--button", action="store_true", help="Wait for keypresses; press 1 for weather or 2 for greeting.")
     return parser.parse_args()
 
 

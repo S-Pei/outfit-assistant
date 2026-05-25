@@ -50,7 +50,7 @@ def get_epaper_dimensions():
     return getattr(epd, "width", None), getattr(epd, "height", None)
 
 
-def display_on_epaper(image):
+def display_on_epaper(image, clear=False):
     try:
         epd5in83_V2 = _import_epaper_driver()
     except ImportError as exc:
@@ -62,7 +62,8 @@ def display_on_epaper(image):
 
     epd = epd5in83_V2.EPD()
     epd.init()
-    epd.Clear()
+    if clear:
+        epd.Clear()
     epd.display(epd.getbuffer(image))
     epd.sleep()
     print("Sent image to e-paper display")
