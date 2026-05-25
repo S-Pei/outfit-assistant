@@ -43,7 +43,7 @@ def fetch_weather(city=None, api_key=None, units="metric"):
         raise RuntimeError("OpenWeather API key not found in environment or api_key param")
 
     params = {"q": city, "appid": key, "units": units}
-    resp = requests.get(API_BASE, params=params, timeout=10)
+    resp = requests.get(API_BASE, params=params, timeout=5)
     resp.raise_for_status()
     data = resp.json()
 
@@ -89,7 +89,7 @@ def fetch_daily_forecast(city=None, target_date=None, api_key=None, units="metri
         target_date = _normalize_date_param(target_date)
 
     params = {"q": city, "appid": key, "units": units}
-    resp = requests.get(FORECAST_API_BASE, params=params, timeout=10)
+    resp = requests.get(FORECAST_API_BASE, params=params, timeout=5)
     resp.raise_for_status()
     data = resp.json()
 

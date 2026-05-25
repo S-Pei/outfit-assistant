@@ -43,10 +43,6 @@ def get_epaper_dimensions():
         return None
 
     epd = epd5in83_V2.EPD()
-    try:
-        epd.init()
-    except Exception:
-        pass
     return getattr(epd, "width", None), getattr(epd, "height", None)
 
 

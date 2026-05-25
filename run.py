@@ -32,6 +32,7 @@ def get_target_date():
 def fetch_screen_data():
     city = os.getenv("CITY", "London")
     target_date = get_target_date()
+    print(f"Fetching weather for {city} on {target_date.isoformat()}...")
     data = fetch_daily_forecast(city, target_date=target_date.isoformat())
     data["time"] = datetime.now().strftime("%H:%M")
     return data
@@ -60,7 +61,9 @@ def render_daily_forecast(clear=False):
     on_pi = is_raspberry_pi()
     width, height = get_screen_size(on_pi)
     data = fetch_screen_data()
+    print("Creating weather screen image...")
     image = create_daily_forecast_screen(data, width, height)
+    print("Sending weather screen to display...")
     show_image(image, on_pi, "daily_forecast_key_preview.png", clear=clear)
 
 
