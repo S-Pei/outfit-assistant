@@ -205,16 +205,14 @@ def create_daily_forecast_screen(data, width, height):
 
     font_title = _load_font(22)
     font_header = _load_font(20)
-    font_large = _load_font(30)
+    font_large = _load_font(34)
     font_medium = _load_font(18)
     font_small = _load_font(14)
     font_tiny = _load_font(12)
 
     margin = 18
     city = data.get("city", "Unknown City")
-    day_label = data.get("date_label") or data.get("date") or "Today"
-    if str(day_label).lower() == "tomorrow":
-        day_label = _format_display_date(data.get("date")) or day_label
+    day_label = _format_display_date(data.get("date")) or data.get("date_label") or "Today"
     entries = _filter_forecast_window(data.get("forecast", []))
     high_low_entries = _filter_forecast_window(entries, start_hour=8)
 
@@ -258,8 +256,8 @@ def create_daily_forecast_screen(data, width, height):
     current_time = data.get("time") or datetime.now().strftime("%H:%M")
     time_w, _ = _text_size(draw, current_time, font_header)
     draw.text(((width - time_w) / 2, margin + 6), current_time, font=font_header, fill=0)
-    day_w, _ = _text_size(draw, day_label, font_small)
-    draw.text((width - margin - day_w, margin + 7), day_label, font=font_small, fill=0)
+    day_w, _ = _text_size(draw, day_label, font_header)
+    draw.text((width - margin - day_w, margin + 6), day_label, font=font_header, fill=0)
     draw.line((margin, margin + 42, width - margin, margin + 42), fill=0)
 
     # Lead condition icon and practical summary
@@ -285,7 +283,7 @@ def create_daily_forecast_screen(data, width, height):
         ("Rain starts" if has_rain else "Rain", rain_start, rain_stop, "rain"),
         ("High", _format_value(high_temp, "°C"), f"At {high_time}", "clear"),
         ("Low", _format_value(low_temp, "°C"), f"At {low_time}", "snow"),
-        ("Wind", _wind_label(max_wind), _wind_impact(max_wind), "wind"),
+        ("Wind", _wind_label(max_wind), "", "wind"),
     ]
 
     for idx, (label, value, detail, icon_condition) in enumerate(cards):
@@ -301,14 +299,14 @@ def create_daily_forecast_screen(data, width, height):
             draw.rectangle((x0, y0, x1, y1), outline=0)
             fill = 0
 
-        draw.text((x0 + 8, y0 + 6), label, font=font_small, fill=fill)
+        draw.text((x0 + 8, y0 + 6), label, font=font_medium, fill=fill)
         value_font = font_large if _text_size(draw, value, font_large)[0] <= card_w - 16 else font_header
         value_lines = _wrap_text(draw, value, value_font, card_w - 16, max_lines=1)
-        draw.text((x0 + 8, y0 + 28), value_lines[0], font=value_font, fill=fill)
-        detail_font = font_medium if icon_condition in ("clear", "snow") else font_tiny
-        detail_lines = _wrap_text(draw, detail, detail_font, card_w - 16, max_lines=1)
-        detail_y = y1 - 30 if icon_condition in ("clear", "snow") else y1 - 26
-        draw.text((x0 + 8, detail_y), detail_lines[0], font=detail_font, fill=fill)
+        draw.text((x0 + 8, y0 + 30), value_lines[0], font=value_font, fill=fill)
+        if detail:
+            detail_font = font_medium if _text_size(draw, detail, font_medium)[0] <= card_w - 16 else font_small
+            detail_lines = _wrap_text(draw, detail, detail_font, card_w - 16, max_lines=1)
+            draw.text((x0 + 8, y1 - 30), detail_lines[0], font=detail_font, fill=fill)
 
     # Hourly forecast strip
     strip_top = card_top + card_h + 34
