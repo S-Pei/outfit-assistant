@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 from app.platform import is_raspberry_pi, read_key, read_key_with_timeout
 from display.epaper import display_on_epaper, get_epaper_dimensions
 from display.preview import save_preview
+from screens.fact import create_random_fact_screen
 from screens.greeting import create_greeting_screen
 from screens.weather import create_daily_forecast_screen
 from services.open_weather import fetch_daily_forecast
@@ -19,7 +20,7 @@ from services.open_weather import fetch_daily_forecast
 PREVIEW_DIR = REPO_ROOT / "previews"
 DEFAULT_SIZE = (648, 480)
 WEATHER_WINDOW_MINUTES = 10
-BUTTON_WEATHER_SECONDS = 10 * 60
+BUTTON_IDLE_SECONDS = 10 * 60
 
 
 def get_target_date():
@@ -65,6 +66,15 @@ def render_daily_forecast(clear=False):
     image = create_daily_forecast_screen(data, width, height)
     print("Sending weather screen to display...")
     show_image(image, on_pi, "daily_forecast_key_preview.png", clear=clear)
+
+
+def render_fact(clear=False):
+    on_pi = is_raspberry_pi()
+    width, height = get_screen_size(on_pi)
+    print("Fetching fact...")
+    image = create_random_fact_screen(width, height)
+    print("Sending fact screen to display...")
+    show_image(image, on_pi, "fact_preview.png", clear=clear)
 
 
 def desired_screen(now):
@@ -123,14 +133,14 @@ def _seconds_until_next_minute(now=None):
     return max(1, 60 - now.second)
 
 
-def run_button_loop(idle_seconds=BUTTON_WEATHER_SECONDS):
-    print("Button mode. Press 1 for weather, 2 for greeting. Weather idles back to greeting after 10 minutes. Press q to quit.")
+def run_button_loop(idle_seconds=BUTTON_IDLE_SECONDS):
+    print("Button mode. Press 1 for weather, 2 for greeting, 3 for fact. Non-greeting screens idle back to greeting after 10 minutes. Press q to quit.")
     render_greeting()
     current_screen = "greeting"
-    weather_started_at = None
+    active_started_at = None
 
     while True:
-        if weather_started_at is None:
+        if current_screen == "greeting":
             key = _read_key_with_timeout(_seconds_until_next_minute())
             if key is None:
                 render_greeting()
@@ -139,12 +149,12 @@ def run_button_loop(idle_seconds=BUTTON_WEATHER_SECONDS):
                 continue
             print()
         else:
-            remaining = idle_seconds - (time.monotonic() - weather_started_at)
+            remaining = idle_seconds - (time.monotonic() - active_started_at)
             if remaining <= 0:
                 render_greeting(clear=current_screen != "greeting")
                 current_screen = "greeting"
-                weather_started_at = None
-                print("Returned to greeting. Press 1 for weather, 2 for greeting, or q to quit.")
+                active_started_at = None
+                print("Returned to greeting. Press 1 for weather, 2 for greeting, 3 for fact, or q to quit.")
                 continue
 
             key = _read_key_with_timeout(remaining)
@@ -160,18 +170,28 @@ def run_button_loop(idle_seconds=BUTTON_WEATHER_SECONDS):
                 raise
 
             current_screen = "weather"
-            weather_started_at = time.monotonic()
-            print("Rendered weather. It will return to greeting after 10 minutes. Press 1 to refresh, 2 for greeting, or q to quit.")
+            active_started_at = time.monotonic()
+            print("Rendered weather. It will return to greeting after 10 minutes. Press 1 to refresh, 2 for greeting, 3 for fact, or q to quit.")
         elif key == "2":
             render_greeting(clear=current_screen != "greeting")
             current_screen = "greeting"
-            weather_started_at = None
-            print("Rendered greeting. Press 1 for weather, 2 to refresh greeting, or q to quit.")
+            active_started_at = None
+            print("Rendered greeting. Press 1 for weather, 2 to refresh greeting, 3 for fact, or q to quit.")
+        elif key == "3":
+            try:
+                render_fact(clear=current_screen != "fact")
+            except Exception as exc:
+                print(f"Fact render failed: {exc}")
+                raise
+
+            current_screen = "fact"
+            active_started_at = time.monotonic()
+            print("Rendered fact. It will return to greeting after 10 minutes. Press 1 for weather, 2 for greeting, 3 to refresh fact, or q to quit.")
         elif key in ("q", "Q"):
             print("Exiting.")
             return
         else:
-            print(f"Ignored key: {key!r}. Press 1 for weather, 2 for greeting, or q to quit.")
+            print(f"Ignored key: {key!r}. Press 1 for weather, 2 for greeting, 3 for fact, or q to quit.")
 
 
 def parse_args():
@@ -180,7 +200,8 @@ def parse_args():
     parser.add_argument("--poll-seconds", type=int, default=30, help="Seconds between schedule checks.")
     parser.add_argument("--weather", action="store_true", help="Render the weather screen once and exit.")
     parser.add_argument("--greeting", action="store_true", help="Render the greeting screen once and exit.")
-    parser.add_argument("--button", action="store_true", help="Wait for keypresses; press 1 for weather or 2 for greeting.")
+    parser.add_argument("--fact", action="store_true", help="Render the fact screen once and exit.")
+    parser.add_argument("--button", action="store_true", help="Wait for keypresses; press 1 for weather, 2 for greeting, or 3 for fact.")
     return parser.parse_args()
 
 
@@ -193,6 +214,10 @@ def main():
 
     if args.greeting:
         render_greeting()
+        return
+
+    if args.fact:
+        render_fact()
         return
 
     if args.once:
